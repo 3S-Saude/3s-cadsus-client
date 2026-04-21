@@ -51,7 +51,7 @@ def default_api_token_request(
 
 
 def default_cert_token_request(settings: CadSUSSettings) -> RequestDefinition:
-    return RequestDefinition(method="POST", url=settings.auth_token_url)
+    return RequestDefinition(method="GET", url=settings.auth_token_url)
 
 
 class CadSUSAuthenticator:
