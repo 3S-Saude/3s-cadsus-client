@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import time
 import unittest
 
 import httpx
 
-from cadsus_client import CadSUSClient, CadSUSParseError, CadSUSSettings
+from cadsus_client import (
+    CadSUSAuthenticationError,
+    CadSUSClient,
+    CadSUSParseError,
+    CadSUSSettings,
+)
 from cadsus_client.cache import CachedToken
 from cadsus_client.client import DocumentType, get_document_type, normalize_identifier
 from cadsus_client.config import AuthMethod
@@ -136,6 +142,52 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(counters, {"login": 1, "token": 1, "api": 2})
 
+    async def test_api_cache_expiration_uses_exp_from_final_token_jwt(self) -> None:
+        login_token = build_fake_jwt(int(time.time()) + 120)
+        final_token_expiration = int(time.time()) + 3600
+        jwt_token = build_fake_jwt(final_token_expiration)
+        cache = FakeTokenCache()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url == httpx.URL("https://example.test/login"):
+                return httpx.Response(200, json={"access_token": login_token})
+
+            if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.headers.get("Authorization"), f"Bearer {login_token}")
+                return httpx.Response(
+                    200,
+                    json={"access_token": jwt_token, "expires_in": 5},
+                )
+
+            if request.url == httpx.URL("https://example.test/api"):
+                self.assertEqual(request.headers.get("Authorization"), f"jwt {jwt_token}")
+                return httpx.Response(200, text="<ok/>")
+
+            self.fail(f"Unexpected request URL: {request.url}")
+
+        settings = CadSUSSettings(
+            auth_method=AuthMethod.API,
+            auth_login_url="https://example.test/login",
+            auth_token_url="https://example.test/token",
+            api_url="https://example.test/api",
+            user="user",
+            password="password",
+        )
+
+        async with CadSUSClient(
+            settings,
+            cache=cache,
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            await client.buscar_pessoa("12345678901")
+
+        cached_token = cache._store[settings.cache_key]
+        self.assertAlmostEqual(
+            cached_token.expires_at,
+            float(final_token_expiration),
+            delta=1,
+        )
+
     async def test_buscar_pessoa_identifies_cns(self) -> None:
         counters = {"token": 0}
         jwt_token = build_fake_jwt(int(time.time()) + 3600)
@@ -168,6 +220,44 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
         self.assertEqual(counters["token"], 1)
+
+    async def test_cert_cache_expiration_uses_exp_from_token_jwt(self) -> None:
+        token_expiration = int(time.time()) + 3600
+        jwt_token = build_fake_jwt(token_expiration)
+        cache = FakeTokenCache()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url == httpx.URL("https://example.test/token"):
+                return httpx.Response(
+                    200,
+                    json={"access_token": jwt_token, "expires_in": 5},
+                )
+            if request.url == httpx.URL("https://example.test/api"):
+                self.assertEqual(request.headers.get("Authorization"), f"jwt {jwt_token}")
+                return httpx.Response(200, text="<ok/>")
+            self.fail(f"Unexpected request URL: {request.url}")
+
+        settings = CadSUSSettings(
+            auth_method=AuthMethod.CERT,
+            auth_token_url="https://example.test/token",
+            api_url="https://example.test/api",
+            cert="/tmp/cert.pem",
+            key="/tmp/key.pem",
+        )
+
+        async with CadSUSClient(
+            settings,
+            cache=cache,
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            await client.buscar_pessoa("12345678901")
+
+        cached_token = cache._store[settings.cache_key]
+        self.assertAlmostEqual(
+            cached_token.expires_at,
+            float(token_expiration),
+            delta=1,
+        )
 
     async def test_buscar_pessoa_returns_structured_data(self) -> None:
         jwt_token = build_fake_jwt(int(time.time()) + 3600)
@@ -213,6 +303,85 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
             "data_falecimento": None,
         }
         self.assertEqual(parsed, expected)
+
+    async def test_buscar_pessoa_debug_logs_settings_and_auth_steps(self) -> None:
+        buffer = io.StringIO()
+        jwt_token = build_fake_jwt(int(time.time()) + 3600)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url == httpx.URL("https://example.test/login"):
+                return httpx.Response(200, json={"access_token": "login-token"})
+            if request.url == httpx.URL("https://example.test/token"):
+                return httpx.Response(200, json={"access_token": jwt_token})
+            if request.url == httpx.URL("https://example.test/api"):
+                return httpx.Response(200, text="<ok/>")
+            self.fail(f"Unexpected request URL: {request.url}")
+
+        settings = CadSUSSettings(
+            auth_method=AuthMethod.API,
+            auth_login_url="https://example.test/login",
+            auth_token_url="https://example.test/token",
+            api_url="https://example.test/api",
+            user="user",
+            password="password",
+        )
+
+        async with CadSUSClient(
+            settings,
+            cache=FakeTokenCache(),
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            await client.buscar_pessoa_debug(
+                "123.456.789-01",
+                stream=buffer,
+                reveal_secrets=True,
+            )
+
+        output = buffer.getvalue()
+        self.assertIn("CADSUS_AUTH_TOKEN_URL", output)
+        self.assertIn("https://example.test/token", output)
+        self.assertIn("CADSUS_PASSWORD", output)
+        self.assertIn("password", output)
+        self.assertIn("Requisicao de login", output)
+        self.assertIn("Requisicao ao CADSUS_AUTH_TOKEN_URL", output)
+        self.assertIn("Requisicao para API CADSUS", output)
+
+    async def test_buscar_pessoa_debug_logs_token_endpoint_failure(self) -> None:
+        buffer = io.StringIO()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url == httpx.URL("https://example.test/login"):
+                return httpx.Response(200, json={"access_token": "login-token"})
+            if request.url == httpx.URL("https://example.test/token"):
+                return httpx.Response(500, text="token endpoint failure")
+            self.fail(f"Unexpected request URL: {request.url}")
+
+        settings = CadSUSSettings(
+            auth_method=AuthMethod.API,
+            auth_login_url="https://example.test/login",
+            auth_token_url="https://example.test/token",
+            api_url="https://example.test/api",
+            user="user",
+            password="password",
+        )
+
+        async with CadSUSClient(
+            settings,
+            cache=FakeTokenCache(),
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            with self.assertRaises(CadSUSAuthenticationError):
+                await client.buscar_pessoa_debug(
+                    "12345678901",
+                    stream=buffer,
+                    reveal_secrets=True,
+                )
+
+        output = buffer.getvalue()
+        self.assertIn("Falha HTTP durante autenticacao", output)
+        self.assertIn("https://example.test/token", output)
+        self.assertIn("status_code: 500", output)
+        self.assertIn("token endpoint failure", output)
 
 
 class IdentifierTests(unittest.TestCase):

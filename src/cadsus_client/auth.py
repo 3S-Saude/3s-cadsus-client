@@ -11,6 +11,7 @@ import httpx
 
 from .cache import CachedToken, TokenCache
 from .config import AuthMethod, CadSUSSettings
+from .debug import ConsoleDebugTracer
 from .exceptions import CadSUSAuthenticationError
 
 
@@ -72,28 +73,61 @@ class CadSUSAuthenticator:
         self._cert_token_request_factory = cert_token_request_factory
         self._lock = asyncio.Lock()
 
-    async def get_token(self) -> str:
+    async def get_token(self, *, debug: ConsoleDebugTracer | None = None) -> str:
+        if debug is not None:
+            debug.log(
+                "Verificando cache de token antes da autenticacao",
+                cache_key=self._settings.cache_key,
+            )
         cached = await self._cache.get(self._settings.cache_key)
         if cached is not None:
+            if debug is not None:
+                debug.log_cache_hit(self._settings.cache_key, cached)
             return cached.value
 
         async with self._lock:
             cached = await self._cache.get(self._settings.cache_key)
             if cached is not None:
+                if debug is not None:
+                    debug.log_cache_hit(self._settings.cache_key, cached)
                 return cached.value
+            if debug is not None:
+                debug.log_cache_miss(self._settings.cache_key)
 
-            token = await self._authenticate()
+            token = await self._authenticate(debug=debug)
             await self._cache.set(self._settings.cache_key, token)
+            if debug is not None:
+                debug.log(
+                    "Token salvo no cache",
+                    cache_key=self._settings.cache_key,
+                    expires_at=token.expires_at,
+                    expires_at_iso=_format_timestamp(token.expires_at),
+                )
             return token.value
 
-    async def _authenticate(self) -> CachedToken:
+    async def _authenticate(
+        self,
+        *,
+        debug: ConsoleDebugTracer | None = None,
+    ) -> CachedToken:
         if self._settings.auth_method is AuthMethod.API:
-            return await self._authenticate_via_api()
-        return await self._authenticate_via_cert()
+            if debug is not None:
+                debug.log("Fluxo de autenticacao selecionado", auth_method="API")
+            return await self._authenticate_via_api(debug=debug)
+        if debug is not None:
+            debug.log("Fluxo de autenticacao selecionado", auth_method="CERT")
+        return await self._authenticate_via_cert(debug=debug)
 
-    async def _authenticate_via_api(self) -> CachedToken:
+    async def _authenticate_via_api(
+        self,
+        *,
+        debug: ConsoleDebugTracer | None = None,
+    ) -> CachedToken:
+        login_request = self._api_login_request_factory(self._settings)
         login_response = await self._execute(
-            self._api_login_request_factory(self._settings)
+            login_request,
+            debug=debug,
+            request_label="Requisicao de login",
         )
         login_payload = _safe_json(login_response)
         login_token = _extract_access_token(login_payload, login_response.text)
@@ -101,9 +135,14 @@ class CadSUSAuthenticator:
             raise CadSUSAuthenticationError(
                 "Nao foi possivel extrair o access_token da resposta de login."
             )
+        if debug is not None:
+            debug.log("Token de login extraido", login_token=login_token)
 
+        token_request = self._api_token_request_factory(self._settings, login_token)
         token_response = await self._execute(
-            self._api_token_request_factory(self._settings, login_token)
+            token_request,
+            debug=debug,
+            request_label="Requisicao ao CADSUS_AUTH_TOKEN_URL",
         )
         token_payload = _safe_json(token_response)
         access_token = _extract_access_token(token_payload, token_response.text)
@@ -111,20 +150,31 @@ class CadSUSAuthenticator:
             raise CadSUSAuthenticationError(
                 "Nao foi possivel extrair o access_token final do CADSUS."
             )
+        if debug is not None:
+            debug.log("Token final do CADSUS extraido", access_token=access_token)
+
+        expires_at = _resolve_expiration(
+            access_token,
+            fallback_seconds=self._settings.token_ttl_fallback,
+            debug=debug,
+        )
 
         return CachedToken(
             value=access_token,
-            expires_at=_resolve_expiration(
-                token_payload,
-                access_token,
-                fallback_seconds=self._settings.token_ttl_fallback,
-            ),
+            expires_at=expires_at,
         )
 
-    async def _authenticate_via_cert(self) -> CachedToken:
+    async def _authenticate_via_cert(
+        self,
+        *,
+        debug: ConsoleDebugTracer | None = None,
+    ) -> CachedToken:
+        request = self._cert_token_request_factory(self._settings)
         response = await self._execute(
-            self._cert_token_request_factory(self._settings),
+            request,
             cert=(self._settings.cert, self._settings.key),
+            debug=debug,
+            request_label="Requisicao ao CADSUS_AUTH_TOKEN_URL com certificado",
         )
         payload = _safe_json(response)
         access_token = _extract_access_token(payload, response.text)
@@ -132,14 +182,18 @@ class CadSUSAuthenticator:
             raise CadSUSAuthenticationError(
                 "Nao foi possivel extrair o access_token do fluxo por certificado."
             )
+        if debug is not None:
+            debug.log("Token do fluxo com certificado extraido", access_token=access_token)
+
+        expires_at = _resolve_expiration(
+            access_token,
+            fallback_seconds=self._settings.token_ttl_fallback,
+            debug=debug,
+        )
 
         return CachedToken(
             value=access_token,
-            expires_at=_resolve_expiration(
-                payload,
-                access_token,
-                fallback_seconds=self._settings.token_ttl_fallback,
-            ),
+            expires_at=expires_at,
         )
 
     async def _execute(
@@ -147,7 +201,22 @@ class CadSUSAuthenticator:
         request_definition: RequestDefinition,
         *,
         cert: tuple[str | None, str | None] | None = None,
+        debug: ConsoleDebugTracer | None = None,
+        request_label: str = "Requisicao de autenticacao",
     ) -> httpx.Response:
+        if debug is not None:
+            debug.log_request(
+                request_label,
+                method=request_definition.method,
+                url=request_definition.url,
+                headers=request_definition.headers,
+                params=request_definition.params,
+                json_body=request_definition.json,
+                data=request_definition.data,
+                content=request_definition.content,
+                cert=cert,
+            )
+
         client_kwargs: dict[str, Any] = {
             "timeout": self._settings.timeout,
             "transport": self._transport,
@@ -166,14 +235,35 @@ class CadSUSAuthenticator:
                     data=request_definition.data,
                     content=request_definition.content,
                 )
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    if debug is not None:
+                        debug.log_response(
+                            f"{request_label} - resposta com erro",
+                            exc.response,
+                        )
+                        debug.log_exception(
+                            "Falha HTTP durante autenticacao",
+                            exc,
+                            url=request_definition.url,
+                        )
+                    raise CadSUSAuthenticationError(
+                        f"Falha de autenticacao no endpoint {request_definition.url}: "
+                        f"{exc.response.status_code}"
+                    ) from exc
+
+                if debug is not None:
+                    debug.log_response(f"{request_label} - resposta", response)
+
                 return response
-            except httpx.HTTPStatusError as exc:
-                raise CadSUSAuthenticationError(
-                    f"Falha de autenticacao no endpoint {request_definition.url}: "
-                    f"{exc.response.status_code}"
-                ) from exc
             except httpx.HTTPError as exc:
+                if debug is not None:
+                    debug.log_exception(
+                        "Erro de comunicacao durante autenticacao",
+                        exc,
+                        url=request_definition.url,
+                    )
                 raise CadSUSAuthenticationError(
                     f"Erro de comunicacao durante a autenticacao: {exc}"
                 ) from exc
@@ -214,21 +304,31 @@ def _find_nested_value(payload: Any | None, target_key: str) -> Any | None:
 
 
 def _resolve_expiration(
-    payload: Any | None,
     token: str,
     *,
     fallback_seconds: int,
+    debug: ConsoleDebugTracer | None = None,
 ) -> float:
     now = time.time()
-    expires_in = _find_nested_value(payload, "expires_in")
-    if isinstance(expires_in, (int, float)) and expires_in > 0:
-        return max(now + 30, now + float(expires_in) - 60)
-
     jwt_exp = _extract_jwt_exp(token)
     if jwt_exp is not None:
-        return max(now + 30, jwt_exp - 60)
+        if debug is not None:
+            debug.log(
+                "Expiracao resolvida pela claim exp do JWT",
+                expires_at=jwt_exp,
+                expires_at_iso=_format_timestamp(jwt_exp),
+            )
+        return jwt_exp
 
-    return now + fallback_seconds
+    expires_at = now + fallback_seconds
+    if debug is not None:
+        debug.log(
+            "Claim exp ausente ou invalida; usando fallback de expiracao",
+            fallback_seconds=fallback_seconds,
+            expires_at=expires_at,
+            expires_at_iso=_format_timestamp(expires_at),
+        )
+    return expires_at
 
 
 def _extract_jwt_exp(token: str) -> float | None:
@@ -249,3 +349,6 @@ def _extract_jwt_exp(token: str) -> float | None:
         return float(exp)
     return None
 
+
+def _format_timestamp(value: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(value))

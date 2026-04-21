@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Any
+from typing import IO, Any
 
 import httpx
 
@@ -17,6 +17,7 @@ from .auth import (
 )
 from .cache import TokenCache, create_token_cache
 from .config import CadSUSSettings
+from .debug import ConsoleDebugTracer
 from .exceptions import CadSUSRequestError
 from .soap import SoapDocumentType, build_busca_pessoa_envelope, parse_busca_pessoa_response
 
@@ -92,12 +93,57 @@ class CadSUSClient:
             await self._client.aclose()
 
     async def buscar_pessoa(self, identifier: str) -> dict[str, Any] | None:
+        return await self._buscar_pessoa(identifier)
+
+    async def buscar_pessoa_debug(
+        self,
+        identifier: str,
+        *,
+        stream: IO[str] | None = None,
+        reveal_secrets: bool = False,
+        include_response_body: bool = True,
+    ) -> dict[str, Any] | None:
+        debug = ConsoleDebugTracer(
+            stream=stream,
+            reveal_secrets=reveal_secrets,
+            include_response_body=include_response_body,
+        )
+        debug.log_settings(self._settings)
+        debug.log("Modo debug iniciado", identifier=identifier)
+        try:
+            result = await self._buscar_pessoa(identifier, debug=debug)
+        except Exception as exc:
+            debug.log_exception("Fluxo finalizado com erro", exc)
+            raise
+
+        debug.log("Fluxo finalizado com sucesso", result=result)
+        return result
+
+    async def _buscar_pessoa(
+        self,
+        identifier: str,
+        *,
+        debug: ConsoleDebugTracer | None = None,
+    ) -> dict[str, Any] | None:
         normalized_identifier = normalize_identifier(identifier)
         if not normalized_identifier:
+            if debug is not None:
+                debug.log(
+                    "Identificador informado nao possui digitos validos",
+                    identifier=identifier,
+                )
             raise CadSUSRequestError("O identificador informado esta vazio.")
 
         document_type = get_document_type(normalized_identifier)
-        token = await self._authenticator.get_token()
+        if debug is not None:
+            debug.log(
+                "Identificador normalizado para consulta",
+                identifier_original=identifier,
+                identifier_normalized=normalized_identifier,
+                document_type=document_type.value,
+            )
+
+        token = await self._authenticator.get_token(debug=debug)
         envelope = build_busca_pessoa_envelope(
             normalized_identifier,
             SoapDocumentType(document_type.value),
@@ -108,28 +154,78 @@ class CadSUSClient:
             "Content-Type": "application/soap+xml",
         }
 
+        if debug is not None:
+            debug.log_request(
+                "Requisicao para API CADSUS",
+                method="POST",
+                url=self._settings.api_url,
+                headers=headers,
+                content=envelope.encode("utf-8"),
+            )
+
         try:
             response = await self._client.post(
                 self._settings.api_url,
                 headers=headers,
                 content=envelope.encode("utf-8"),
             )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise CadSUSRequestError(
-                "Falha na consulta ao CADSUS.",
-                status_code=exc.response.status_code,
-                response_body=exc.response.text,
-            ) from exc
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if debug is not None:
+                    debug.log_response("Resposta da API CADSUS com erro", exc.response)
+                    debug.log_exception(
+                        "Falha HTTP durante consulta ao CADSUS",
+                        exc,
+                        url=str(exc.request.url),
+                    )
+                raise CadSUSRequestError(
+                    "Falha na consulta ao CADSUS.",
+                    status_code=exc.response.status_code,
+                    response_body=exc.response.text,
+                ) from exc
+
+            if debug is not None:
+                debug.log_response("Resposta da API CADSUS", response)
         except httpx.HTTPError as exc:
+            if debug is not None:
+                debug.log_exception(
+                    "Erro de comunicacao durante consulta ao CADSUS",
+                    exc,
+                    url=self._settings.api_url,
+                )
             raise CadSUSRequestError(f"Erro de comunicacao com o CADSUS: {exc}") from exc
 
-        return parse_busca_pessoa_response(response.text)
+        try:
+            result = parse_busca_pessoa_response(response.text)
+        except Exception as exc:
+            if debug is not None:
+                debug.log_exception("Erro ao parsear resposta da API CADSUS", exc)
+            raise
+        if debug is not None:
+            debug.log("Resposta da API CADSUS parseada", result=result)
+        return result
 
 
 async def buscar_pessoa(identifier: str) -> dict[str, Any] | None:
     async with CadSUSClient.from_env() as client:
         return await client.buscar_pessoa(identifier)
+
+
+async def buscar_pessoa_debug(
+    identifier: str,
+    *,
+    stream: IO[str] | None = None,
+    reveal_secrets: bool = False,
+    include_response_body: bool = True,
+) -> dict[str, Any] | None:
+    async with CadSUSClient.from_env() as client:
+        return await client.buscar_pessoa_debug(
+            identifier,
+            stream=stream,
+            reveal_secrets=reveal_secrets,
+            include_response_body=include_response_body,
+        )
 
 
 def normalize_identifier(identifier: str) -> str:
