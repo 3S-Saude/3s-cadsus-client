@@ -41,6 +41,8 @@ export CADSUS_CERT=/srv/app/cert.pem
 export CADSUS_KEY=/srv/app/key.pem
 ```
 
+No fluxo `CERT`, a biblioteca consulta `CADSUS_AUTH_TOKEN_URL` com `GET`, apresentando o certificado configurado no client TLS.
+
 ### Variaveis opcionais
 
 ```bash

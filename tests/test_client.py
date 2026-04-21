@@ -109,10 +109,12 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/login"):
                 counters["login"] += 1
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(200, json={"access_token": "login-token"})
 
             if request.url == httpx.URL("https://example.test/token"):
                 counters["token"] += 1
+                self.assertEqual(request.method, "POST")
                 self.assertEqual(request.headers.get("Authorization"), "Bearer login-token")
                 return httpx.Response(200, json={"access_token": jwt_token})
 
@@ -150,9 +152,11 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/login"):
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(200, json={"access_token": login_token})
 
             if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.method, "POST")
                 self.assertEqual(request.headers.get("Authorization"), f"Bearer {login_token}")
                 return httpx.Response(
                     200,
@@ -195,6 +199,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/token"):
                 counters["token"] += 1
+                self.assertEqual(request.method, "GET")
                 return httpx.Response(200, json={"access_token": jwt_token})
             if request.url == httpx.URL("https://example.test/api"):
                 content = request.content.decode()
@@ -228,6 +233,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.method, "GET")
                 return httpx.Response(
                     200,
                     json={"access_token": jwt_token, "expires_in": 5},
@@ -264,6 +270,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.method, "GET")
                 return httpx.Response(200, json={"access_token": jwt_token})
             if request.url == httpx.URL("https://example.test/api"):
                 return httpx.Response(200, text=SOAP_RESPONSE)
@@ -310,8 +317,10 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/login"):
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(200, json={"access_token": "login-token"})
             if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(200, json={"access_token": jwt_token})
             if request.url == httpx.URL("https://example.test/api"):
                 return httpx.Response(200, text="<ok/>")
@@ -351,8 +360,10 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url == httpx.URL("https://example.test/login"):
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(200, json={"access_token": "login-token"})
             if request.url == httpx.URL("https://example.test/token"):
+                self.assertEqual(request.method, "POST")
                 return httpx.Response(500, text="token endpoint failure")
             self.fail(f"Unexpected request URL: {request.url}")
 
