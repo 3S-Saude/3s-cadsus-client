@@ -7,15 +7,10 @@ import unittest
 
 import httpx
 
-from cadsus_client import (
-    CadSUSClient,
-    CadSUSParseError,
-    CadSUSSettings,
-    parse_busca_pessoa_response,
-)
+from cadsus_client import CadSUSClient, CadSUSParseError, CadSUSSettings
 from cadsus_client.client import DocumentType, get_document_type, normalize_identifier
 from cadsus_client.config import AuthMethod
-from cadsus_client.soap import SoapDocumentType, build_busca_pessoa_envelope
+from cadsus_client.soap import SoapDocumentType, build_busca_pessoa_envelope, parse_busca_pessoa_response
 
 
 SOAP_RESPONSE = """\
@@ -151,10 +146,10 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
         ) as client:
             result = await client.buscar_pessoa("898001160366001")
 
-        self.assertEqual(result.document_type, DocumentType.CNS)
+        self.assertIsNone(result)
         self.assertEqual(counters["token"], 1)
 
-    async def test_buscar_pessoa_json_returns_structured_data(self) -> None:
+    async def test_buscar_pessoa_returns_structured_data(self) -> None:
         jwt_token = build_fake_jwt(int(time.time()) + 3600)
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -176,9 +171,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
             settings,
             transport=httpx.MockTransport(handler),
         ) as client:
-            result = await client.buscar_pessoa("12345678901")
-            parsed = result.json()
-            parsed_from_client = await client.buscar_pessoa_json("12345678901")
+            parsed = await client.buscar_pessoa("12345678901")
 
         expected = {
             "nome": "MARIA",
@@ -199,7 +192,6 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
             "data_falecimento": None,
         }
         self.assertEqual(parsed, expected)
-        self.assertEqual(parsed_from_client, expected)
 
 
 class IdentifierTests(unittest.TestCase):
