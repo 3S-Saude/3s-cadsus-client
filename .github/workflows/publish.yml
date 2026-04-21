@@ -1,0 +1,68 @@
+name: Publish Python Package
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build And Validate
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set Up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m pip install .
+
+      - name: Run Tests
+        run: |
+          PYTHONPATH=src python -m unittest discover -s tests
+
+      - name: Build Distributions
+        run: python -m build
+
+      - name: Check Distribution Metadata
+        run: python -m twine check dist/*
+
+      - name: Upload Distribution Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-pypi:
+    name: Publish To PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    environment:
+      name: pypi
+      url: https://pypi.org/p/3s-cadsus-client
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download Distribution Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish To PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
