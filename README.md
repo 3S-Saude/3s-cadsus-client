@@ -61,6 +61,39 @@ async def consultar_cadsus(identificador: str) -> dict | None:
         return await client.buscar_pessoa(identificador)
 ```
 
+## Modo de debug
+
+Para investigar falhas de autenticacao ou da consulta ao CADSUS, o pacote expoe `buscar_pessoa_debug`.
+
+O metodo imprime no terminal:
+
+- Variaveis usadas no fluxo
+- Status do cache de token
+- Requests e responses do login, do `CADSUS_AUTH_TOKEN_URL` e da API do CADSUS
+- Excecoes levantadas durante autenticacao, consulta e parse
+
+```python
+from cadsus_client import buscar_pessoa_debug
+
+
+payload = await buscar_pessoa_debug(
+    "12345678901",
+    reveal_secrets=True,
+)
+```
+
+Se preferir usar uma instancia ja criada do cliente:
+
+```python
+async with CadSUSClient.from_env() as client:
+    payload = await client.buscar_pessoa_debug(
+        "12345678901",
+        reveal_secrets=True,
+    )
+```
+
+Use `reveal_secrets=True` apenas em diagnostico controlado, pois essa opcao imprime senha, tokens e headers sensiveis no `stdout`.
+
 ## Exemplo em projeto Django
 
 ```python
@@ -86,11 +119,9 @@ A chave utilizada no backend configurado para esse cache, incluindo Redis, e `ca
 
 O alias do cache do Django continua configuravel por `CADSUS_CACHE_ALIAS`.
 
-O tempo de expiracao do token e resolvido na seguinte ordem:
+Nos fluxos `API` e `CERT`, o tempo de expiracao do token em cache e definido pela claim `exp` do JWT retornado pelo endpoint `CADSUS_AUTH_TOKEN_URL`.
 
-1. Campo `expires_in` da resposta de autenticacao
-2. Claim `exp` do JWT retornado
-3. Fallback configurado por `CADSUS_TOKEN_TTL_FALLBACK`
+Se o token retornado nao trouxer uma claim `exp` legivel, a biblioteca usa o fallback configurado por `CADSUS_TOKEN_TTL_FALLBACK`.
 
 ## Personalizacao avancada da autenticacao API
 
