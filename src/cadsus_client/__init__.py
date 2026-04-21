@@ -1,5 +1,5 @@
 from .auth import RequestDefinition
-from .client import BuscarPessoaResult, CadSUSClient, DocumentType, buscar_pessoa, buscar_pessoa_json
+from .client import CadSUSClient, DocumentType, buscar_pessoa
 from .config import AuthMethod, CadSUSSettings
 from .exceptions import (
     CadSUSAuthenticationError,
@@ -8,11 +8,9 @@ from .exceptions import (
     CadSUSError,
     CadSUSRequestError,
 )
-from .soap import parse_busca_pessoa_response
 
 __all__ = [
     "AuthMethod",
-    "BuscarPessoaResult",
     "CadSUSAuthenticationError",
     "CadSUSClient",
     "CadSUSConfigurationError",
@@ -23,6 +21,4 @@ __all__ = [
     "DocumentType",
     "RequestDefinition",
     "buscar_pessoa",
-    "buscar_pessoa_json",
-    "parse_busca_pessoa_response",
 ]

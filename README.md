@@ -10,8 +10,7 @@ O pacote publicado no PyPI se chama `3s-cadsus-client`, enquanto o import no cod
 - Cache de token com suporte automatico ao cache do Django quando disponivel
 - Fallback para cache em memoria quando o Django nao estiver carregado
 - Autenticacao por `API` ou `CERT`
-- Metodo `buscar_pessoa` com deteccao automatica de CPF ou CNS
-- Conversao do retorno SOAP em dicionario Python com `resultado.json()`
+- Metodo `buscar_pessoa` com deteccao automatica de CPF ou CNS e retorno direto em JSON
 - Workflow de GitHub Actions pronto para build, teste e publicacao no PyPI
 
 ## Instalacao
@@ -61,8 +60,7 @@ from cadsus_client import CadSUSClient
 
 async def consultar_cadsus(identificador: str) -> dict | None:
     async with CadSUSClient.from_env() as client:
-        resultado = await client.buscar_pessoa(identificador)
-        return resultado.json()
+        return await client.buscar_pessoa(identificador)
 ```
 
 ## Exemplo em projeto Django
@@ -77,27 +75,9 @@ async def buscar_pessoa_view(request):
     identificador = request.GET["identificador"]
 
     async with CadSUSClient.from_env() as client:
-        resultado = await client.buscar_pessoa(identificador)
-        payload = resultado.json()
+        payload = await client.buscar_pessoa(identificador)
 
-    return JsonResponse(
-        {
-            "document_type": resultado.document_type.value,
-            "identifier": resultado.normalized_identifier,
-            "dados": payload,
-        }
-    )
-```
-
-Tambem existe um atalho para obter diretamente o dicionario parseado:
-
-```python
-from cadsus_client import CadSUSClient
-
-
-async def consultar_cadsus(identificador: str) -> dict | None:
-    async with CadSUSClient.from_env() as client:
-        return await client.buscar_pessoa_json(identificador)
+    return JsonResponse({"dados": payload})
 ```
 
 ## Cache de token

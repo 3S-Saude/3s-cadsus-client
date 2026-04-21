@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 import httpx
 
@@ -25,19 +24,6 @@ from .soap import SoapDocumentType, build_busca_pessoa_envelope, parse_busca_pes
 class DocumentType(str, Enum):
     CPF = "CPF"
     CNS = "CNS"
-
-
-@dataclass(frozen=True, slots=True)
-class BuscarPessoaResult:
-    identifier: str
-    normalized_identifier: str
-    document_type: DocumentType
-    status_code: int
-    body: str
-    headers: Mapping[str, str]
-
-    def json(self) -> dict[str, Any] | None:
-        return parse_busca_pessoa_response(self.body)
 
 
 class CadSUSClient:
@@ -105,7 +91,7 @@ class CadSUSClient:
         if self._owns_client:
             await self._client.aclose()
 
-    async def buscar_pessoa(self, identifier: str) -> BuscarPessoaResult:
+    async def buscar_pessoa(self, identifier: str) -> dict[str, Any] | None:
         normalized_identifier = normalize_identifier(identifier)
         if not normalized_identifier:
             raise CadSUSRequestError("O identificador informado esta vazio.")
@@ -138,27 +124,12 @@ class CadSUSClient:
         except httpx.HTTPError as exc:
             raise CadSUSRequestError(f"Erro de comunicacao com o CADSUS: {exc}") from exc
 
-        return BuscarPessoaResult(
-            identifier=identifier,
-            normalized_identifier=normalized_identifier,
-            document_type=document_type,
-            status_code=response.status_code,
-            body=response.text,
-            headers=dict(response.headers),
-        )
-
-    async def buscar_pessoa_json(self, identifier: str) -> dict[str, Any] | None:
-        return (await self.buscar_pessoa(identifier)).json()
+        return parse_busca_pessoa_response(response.text)
 
 
-async def buscar_pessoa(identifier: str) -> BuscarPessoaResult:
+async def buscar_pessoa(identifier: str) -> dict[str, Any] | None:
     async with CadSUSClient.from_env() as client:
         return await client.buscar_pessoa(identifier)
-
-
-async def buscar_pessoa_json(identifier: str) -> dict[str, Any] | None:
-    async with CadSUSClient.from_env() as client:
-        return await client.buscar_pessoa_json(identifier)
 
 
 def normalize_identifier(identifier: str) -> str:
