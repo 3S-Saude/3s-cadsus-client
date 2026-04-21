@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .config import CadSUSSettings
+from .exceptions import CadSUSConfigurationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,31 +23,21 @@ class TokenCache(Protocol):
         ...
 
 
-_MEMORY_STORE: dict[str, CachedToken] = {}
-_MEMORY_LOCK = asyncio.Lock()
-
-
-class InMemoryTokenCache:
-    async def get(self, key: str) -> CachedToken | None:
-        async with _MEMORY_LOCK:
-            entry = _MEMORY_STORE.get(key)
-            if entry is None:
-                return None
-            if entry.expires_at <= time.time():
-                _MEMORY_STORE.pop(key, None)
-                return None
-            return entry
-
-    async def set(self, key: str, token: CachedToken) -> None:
-        async with _MEMORY_LOCK:
-            _MEMORY_STORE[key] = token
-
-
 class DjangoTokenCache:
     def __init__(self, alias: str) -> None:
-        from django.core.cache import caches
+        try:
+            from django.core.cache import caches
+        except Exception as exc:
+            raise CadSUSConfigurationError(
+                "O cache de token exige Django com o cache configurado."
+            ) from exc
 
-        self._cache = caches[alias]
+        try:
+            self._cache = caches[alias]
+        except Exception as exc:
+            raise CadSUSConfigurationError(
+                f"Nao foi possivel carregar o cache do Django com alias '{alias}'."
+            ) from exc
 
     async def get(self, key: str) -> CachedToken | None:
         payload = await asyncio.to_thread(self._cache.get, key)
@@ -68,8 +59,4 @@ class DjangoTokenCache:
 
 
 def create_token_cache(settings: CadSUSSettings) -> TokenCache:
-    try:
-        return DjangoTokenCache(settings.cache_alias)
-    except Exception:
-        return InMemoryTokenCache()
-
+    return DjangoTokenCache(settings.cache_alias)

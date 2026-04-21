@@ -7,8 +7,7 @@ O pacote publicado no PyPI se chama `3s-cadsus-client`, enquanto o import no cod
 ## Destaques
 
 - Cliente 100% assincrono com `httpx.AsyncClient`
-- Cache de token com suporte automatico ao cache do Django quando disponivel
-- Fallback para cache em memoria quando o Django nao estiver carregado
+- Cache de token usando exclusivamente `django.core.cache`
 - Autenticacao por `API` ou `CERT`
 - Metodo `buscar_pessoa` com deteccao automatica de CPF ou CNS e retorno direto em JSON
 - Workflow de GitHub Actions pronto para build, teste e publicacao no PyPI
@@ -48,7 +47,6 @@ export CADSUS_KEY=/srv/app/key.pem
 export CADSUS_SYSTEM_CODE=CADSUS
 export CADSUS_TIMEOUT=30
 export CADSUS_CACHE_ALIAS=default
-export CADSUS_CACHE_PREFIX=cadsus_client
 export CADSUS_TOKEN_TTL_FALLBACK=300
 ```
 
@@ -82,7 +80,11 @@ async def buscar_pessoa_view(request):
 
 ## Cache de token
 
-Quando o Django estiver disponivel e configurado, a biblioteca usa `django.core.cache` automaticamente. Caso contrario, usa um cache em memoria do processo.
+A biblioteca usa exclusivamente `django.core.cache` para armazenar o token.
+
+A chave utilizada no backend configurado para esse cache, incluindo Redis, e `cadsus_token`.
+
+O alias do cache do Django continua configuravel por `CADSUS_CACHE_ALIAS`.
 
 O tempo de expiracao do token e resolvido na seguinte ordem:
 
