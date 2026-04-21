@@ -1,8 +1,8 @@
-# 3s-cadsus-client
+# cadsus_client
 
 Biblioteca Python para simplificar a interoperabilidade de projetos Django com a API do CADSUS do Ministerio da Saude.
 
-O pacote publicado no PyPI se chama `3s-cadsus-client`, enquanto o import no codigo Python e `three_s_cadsus_client`.
+O pacote publicado no PyPI se chama `3s-cadsus-client`, enquanto o import no codigo Python e `cadsus_client`.
 
 ## Destaques
 
@@ -11,6 +11,7 @@ O pacote publicado no PyPI se chama `3s-cadsus-client`, enquanto o import no cod
 - Fallback para cache em memoria quando o Django nao estiver carregado
 - Autenticacao por `API` ou `CERT`
 - Metodo `buscar_pessoa` com deteccao automatica de CPF ou CNS
+- Conversao do retorno SOAP em dicionario Python com `resultado.json()`
 - Workflow de GitHub Actions pronto para build, teste e publicacao no PyPI
 
 ## Instalacao
@@ -48,20 +49,20 @@ export CADSUS_KEY=/srv/app/key.pem
 export CADSUS_SYSTEM_CODE=CADSUS
 export CADSUS_TIMEOUT=30
 export CADSUS_CACHE_ALIAS=default
-export CADSUS_CACHE_PREFIX=3s_cadsus_client
+export CADSUS_CACHE_PREFIX=cadsus_client
 export CADSUS_TOKEN_TTL_FALLBACK=300
 ```
 
 ## Uso rapido
 
 ```python
-from three_s_cadsus_client import CadSUSClient
+from cadsus_client import CadSUSClient
 
 
-async def consultar_cadsus(identificador: str) -> str:
+async def consultar_cadsus(identificador: str) -> dict | None:
     async with CadSUSClient.from_env() as client:
         resultado = await client.buscar_pessoa(identificador)
-        return resultado.body
+        return resultado.json()
 ```
 
 ## Exemplo em projeto Django
@@ -69,7 +70,7 @@ async def consultar_cadsus(identificador: str) -> str:
 ```python
 from django.http import JsonResponse
 
-from three_s_cadsus_client import CadSUSClient
+from cadsus_client import CadSUSClient
 
 
 async def buscar_pessoa_view(request):
@@ -77,14 +78,26 @@ async def buscar_pessoa_view(request):
 
     async with CadSUSClient.from_env() as client:
         resultado = await client.buscar_pessoa(identificador)
+        payload = resultado.json()
 
     return JsonResponse(
         {
             "document_type": resultado.document_type.value,
             "identifier": resultado.normalized_identifier,
-            "xml": resultado.body,
+            "dados": payload,
         }
     )
+```
+
+Tambem existe um atalho para obter diretamente o dicionario parseado:
+
+```python
+from cadsus_client import CadSUSClient
+
+
+async def consultar_cadsus(identificador: str) -> dict | None:
+    async with CadSUSClient.from_env() as client:
+        return await client.buscar_pessoa_json(identificador)
 ```
 
 ## Cache de token
@@ -107,7 +120,7 @@ Como a especificacao recebida nao detalha o payload exato dos dois POSTs do meto
 Se a sua instalacao exigir outro formato, voce pode customizar os requests:
 
 ```python
-from three_s_cadsus_client import CadSUSClient, RequestDefinition
+from cadsus_client import CadSUSClient, RequestDefinition
 
 
 def build_login_request(settings):
@@ -143,4 +156,3 @@ O fluxo foi montado para usar Trusted Publishing via OIDC. Antes da primeira rel
 
 - https://packaging.python.org/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
 - https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-pypi
-
