@@ -180,7 +180,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
             "sexo": "F",
             "logradouro": "Rua das Flores",
             "bairro": "Centro",
-            "municipio_ibge": "2611606",
+            "ibge": "2611606",
             "cep": "50000000",
             "numero": "123",
             "telefone": "(81)98765-4321",

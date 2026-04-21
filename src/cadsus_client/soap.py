@@ -135,7 +135,7 @@ def _extract_patient_data(patient: ET.Element) -> dict[str, Any]:
         address_mapping = {
             "logradouro": "streetName",
             "bairro": "additionalLocator",
-            "municipio_ibge": "city",
+            "ibge": "city",
             "cep": "postalCode",
             "numero": "houseNumber",
         }
