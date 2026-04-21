@@ -8,6 +8,7 @@ import unittest
 import httpx
 
 from cadsus_client import CadSUSClient, CadSUSParseError, CadSUSSettings
+from cadsus_client.cache import CachedToken
 from cadsus_client.client import DocumentType, get_document_type, normalize_identifier
 from cadsus_client.config import AuthMethod
 from cadsus_client.soap import SoapDocumentType, build_busca_pessoa_envelope, parse_busca_pessoa_response
@@ -77,6 +78,23 @@ def build_fake_jwt(expiration: int | None = None) -> str:
     return f"{header}.{body}.signature"
 
 
+class FakeTokenCache:
+    def __init__(self) -> None:
+        self._store: dict[str, CachedToken] = {}
+
+    async def get(self, key: str) -> CachedToken | None:
+        token = self._store.get(key)
+        if token is None:
+            return None
+        if token.expires_at <= time.time():
+            self._store.pop(key, None)
+            return None
+        return token
+
+    async def set(self, key: str, token: CachedToken) -> None:
+        self._store[key] = token
+
+
 class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_buscar_pessoa_uses_cached_token(self) -> None:
         counters = {"login": 0, "token": 0, "api": 0}
@@ -110,6 +128,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         async with CadSUSClient(
             settings,
+            cache=FakeTokenCache(),
             transport=httpx.MockTransport(handler),
         ) as client:
             await client.buscar_pessoa("123.456.789-01")
@@ -142,6 +161,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         async with CadSUSClient(
             settings,
+            cache=FakeTokenCache(),
             transport=httpx.MockTransport(handler),
         ) as client:
             result = await client.buscar_pessoa("898001160366001")
@@ -169,6 +189,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
         async with CadSUSClient(
             settings,
+            cache=FakeTokenCache(),
             transport=httpx.MockTransport(handler),
         ) as client:
             parsed = await client.buscar_pessoa("12345678901")
@@ -195,6 +216,17 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class IdentifierTests(unittest.TestCase):
+    def test_settings_use_fixed_cache_key(self) -> None:
+        settings = CadSUSSettings(
+            auth_method=AuthMethod.CERT,
+            auth_token_url="https://example.test/token",
+            api_url="https://example.test/api",
+            cert="/tmp/cert.pem",
+            key="/tmp/key.pem",
+        )
+
+        self.assertEqual(settings.cache_key, "cadsus_token")
+
     def test_normalize_identifier_removes_non_digits(self) -> None:
         self.assertEqual(normalize_identifier("123.456.789-01 "), "12345678901")
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
 
 from .exceptions import CadSUSConfigurationError
+
+
+TOKEN_CACHE_KEY = "cadsus_token"
 
 
 class AuthMethod(str, Enum):
@@ -37,7 +39,6 @@ class CadSUSSettings:
     system_code: str = "CADSUS"
     timeout: float = 30.0
     cache_alias: str = "default"
-    cache_prefix: str = "cadsus_client"
     token_ttl_fallback: int = 300
 
     @classmethod
@@ -55,7 +56,6 @@ class CadSUSSettings:
             system_code=env.get("CADSUS_SYSTEM_CODE", "CADSUS"),
             timeout=float(env.get("CADSUS_TIMEOUT", "30")),
             cache_alias=env.get("CADSUS_CACHE_ALIAS", "default"),
-            cache_prefix=env.get("CADSUS_CACHE_PREFIX", "cadsus_client"),
             token_ttl_fallback=int(env.get("CADSUS_TOKEN_TTL_FALLBACK", "300")),
         )
         settings.validate()
@@ -94,20 +94,7 @@ class CadSUSSettings:
 
     @property
     def cache_key(self) -> str:
-        material = "|".join(
-            [
-                self.auth_method.value,
-                self.auth_login_url or "",
-                self.auth_token_url,
-                self.api_url,
-                self.user or "",
-                self.password or "",
-                self.cert or "",
-                self.key or "",
-            ]
-        )
-        fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()
-        return f"{self.cache_prefix}:token:{fingerprint}"
+        return TOKEN_CACHE_KEY
 
 
 def _required(environ: Mapping[str, str], key: str) -> str:
