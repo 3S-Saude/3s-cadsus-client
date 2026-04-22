@@ -66,6 +66,8 @@ DOCUMENT_ROOTS = {
 
 CPF_DOCUMENT_ROOT = DOCUMENT_ROOTS[SoapDocumentType.CPF]
 CNS_DOCUMENT_ROOT = DOCUMENT_ROOTS[SoapDocumentType.CNS]
+CNS_CARD_TYPE_ROOT = "2.16.840.1.113883.13.236.1"
+DEFINITIVE_CNS_CARD_TYPE = "D"
 
 
 def build_busca_pessoa_envelope(
@@ -167,27 +169,46 @@ def _extract_patient_data(patient: ET.Element) -> dict[str, Any]:
 
 def _extract_documents(patient: ET.Element) -> tuple[list[str], str | None, str | None]:
     cns_values: list[str] = []
+    cns_types: dict[str, str | None] = {}
     seen_cns: set[str] = set()
     cpf: str | None = None
 
     for other_id in _find_children(patient, "asOtherIDs"):
-        identifier = _find_child(other_id, "id")
-        if identifier is None:
+        identifiers = _extract_id_extensions(other_id)
+        cns = identifiers.get(CNS_DOCUMENT_ROOT)
+        if cns:
+            if cns not in seen_cns:
+                seen_cns.add(cns)
+                cns_values.append(cns)
+
+            cns_type = identifiers.get(CNS_CARD_TYPE_ROOT)
+            if cns_type == DEFINITIVE_CNS_CARD_TYPE or cns not in cns_types:
+                cns_types[cns] = cns_type
             continue
 
+        cpf_value = identifiers.get(CPF_DOCUMENT_ROOT)
+        if cpf_value:
+            cpf = cpf_value
+
+    primary_cns = next(
+        (
+            cns
+            for cns in cns_values
+            if cns_types.get(cns) == DEFINITIVE_CNS_CARD_TYPE
+        ),
+        cns_values[0] if cns_values else None,
+    )
+    return cns_values, primary_cns, cpf
+
+
+def _extract_id_extensions(element: ET.Element) -> dict[str, str]:
+    identifiers: dict[str, str] = {}
+    for identifier in _find_children(element, "id"):
         root = identifier.attrib.get("root")
         extension = identifier.attrib.get("extension")
-        if not extension:
-            continue
-
-        if root == CNS_DOCUMENT_ROOT and extension not in seen_cns:
-            seen_cns.add(extension)
-            cns_values.append(extension)
-        elif root == CPF_DOCUMENT_ROOT:
-            cpf = extension
-
-    primary_cns = cns_values[0] if cns_values else None
-    return cns_values, primary_cns, cpf
+        if root and extension:
+            identifiers[root] = extension
+    return identifiers
 
 
 def _extract_phone(patient: ET.Element) -> str | None:

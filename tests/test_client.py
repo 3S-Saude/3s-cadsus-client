@@ -440,3 +440,47 @@ class IdentifierTests(unittest.TestCase):
     def test_parse_busca_pessoa_response_raises_for_invalid_xml(self) -> None:
         with self.assertRaises(CadSUSParseError):
             parse_busca_pessoa_response("<invalid")
+
+    def test_parse_busca_pessoa_response_prefers_definitive_cns(self) -> None:
+        xml = """\
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:S="http://www.w3.org/2003/05/soap-envelope" xmlns="urn:hl7-org:v3">
+  <S:Body>
+    <PRPA_IN201306UV02>
+      <controlActProcess>
+        <subject>
+          <registrationEvent>
+            <subject1>
+              <patient>
+                <patientPerson>
+                  <asOtherIDs>
+                    <id root="2.16.840.1.113883.13.236" extension="201340025330002" />
+                    <id root="2.16.840.1.113883.13.236.1" extension="P" />
+                  </asOtherIDs>
+                  <asOtherIDs>
+                    <id root="2.16.840.1.113883.13.236" extension="898000098287542" />
+                    <id root="2.16.840.1.113883.13.236.1" extension="P" />
+                  </asOtherIDs>
+                  <asOtherIDs>
+                    <id root="2.16.840.1.113883.13.236" extension="709200288278638" />
+                    <id root="2.16.840.1.113883.13.236.1" extension="D" />
+                  </asOtherIDs>
+                </patientPerson>
+              </patient>
+            </subject1>
+          </registrationEvent>
+        </subject>
+      </controlActProcess>
+    </PRPA_IN201306UV02>
+  </S:Body>
+</soap:Envelope>
+"""
+
+        parsed = parse_busca_pessoa_response(xml)
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(
+            parsed["lista_cns"],
+            ["201340025330002", "898000098287542", "709200288278638"],
+        )
+        self.assertEqual(parsed["cns"], "709200288278638")
