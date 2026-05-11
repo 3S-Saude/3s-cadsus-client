@@ -308,6 +308,7 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
             "nome_da_mae": "JOSEFA",
             "falecido": False,
             "data_falecimento": None,
+            "em_situacao_de_rua": False,
         }
         self.assertEqual(parsed, expected)
 
@@ -396,6 +397,33 @@ class CadSUSClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 class IdentifierTests(unittest.TestCase):
+    @staticmethod
+    def _parse_em_situacao_de_rua(as_other_ids_blocks: str) -> bool:
+        xml = f"""\
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:S="http://www.w3.org/2003/05/soap-envelope" xmlns="urn:hl7-org:v3">
+  <S:Body>
+    <PRPA_IN201306UV02>
+      <controlActProcess>
+        <subject>
+          <registrationEvent>
+            <subject1>
+              <patient>
+                <patientPerson>
+                  {as_other_ids_blocks}
+                </patientPerson>
+              </patient>
+            </subject1>
+          </registrationEvent>
+        </subject>
+      </controlActProcess>
+    </PRPA_IN201306UV02>
+  </S:Body>
+</soap:Envelope>
+"""
+        parsed = parse_busca_pessoa_response(xml)
+        assert parsed is not None
+        return parsed["em_situacao_de_rua"]
+
     def test_settings_use_fixed_cache_key(self) -> None:
         settings = CadSUSSettings(
             auth_method=AuthMethod.CERT,
@@ -484,3 +512,42 @@ class IdentifierTests(unittest.TestCase):
             ["201340025330002", "898000098287542", "709200288278638"],
         )
         self.assertEqual(parsed["cns"], "709200288278638")
+
+    def test_parse_busca_pessoa_response_sets_homeless_true_for_code_2(self) -> None:
+        self.assertTrue(
+            self._parse_em_situacao_de_rua(
+                '<asOtherIDs><id root="2.16.840.1.113883.13.600.1" extension="2" /></asOtherIDs>'
+            )
+        )
+
+    def test_parse_busca_pessoa_response_sets_homeless_false_for_other_code(self) -> None:
+        self.assertFalse(
+            self._parse_em_situacao_de_rua(
+                '<asOtherIDs><id root="2.16.840.1.113883.13.600.1" extension="1" /></asOtherIDs>'
+            )
+        )
+
+    def test_parse_busca_pessoa_response_sets_homeless_false_without_housing_oid(self) -> None:
+        self.assertFalse(
+            self._parse_em_situacao_de_rua(
+                '<asOtherIDs><id root="2.16.840.1.113883.13.236" extension="898001160366001" /></asOtherIDs>'
+            )
+        )
+
+    def test_parse_busca_pessoa_response_sets_homeless_false_without_as_other_ids_block(
+        self,
+    ) -> None:
+        self.assertFalse(self._parse_em_situacao_de_rua(""))
+
+    def test_parse_busca_pessoa_response_sets_homeless_false_for_missing_or_invalid_extension(
+        self,
+    ) -> None:
+        scenarios = (
+            '<asOtherIDs><id root="2.16.840.1.113883.13.600.1" /></asOtherIDs>',
+            '<asOtherIDs><id root="2.16.840.1.113883.13.600.1" extension="abc" /></asOtherIDs>',
+            '<asOtherIDs><id root="2.16.840.1.113883.13.600.1" extension=" " /></asOtherIDs>',
+        )
+
+        for as_other_ids in scenarios:
+            with self.subTest(as_other_ids=as_other_ids):
+                self.assertFalse(self._parse_em_situacao_de_rua(as_other_ids))

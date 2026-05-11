@@ -63,6 +63,23 @@ async def consultar_cadsus(identificador: str) -> dict | None:
         return await client.buscar_pessoa(identificador)
 ```
 
+## Estrutura de retorno
+
+Quando o paciente e encontrado, `buscar_pessoa` retorna um dicionario com os dados parseados do XML do CADSUS.
+
+Entre os campos, a biblioteca agora inclui `em_situacao_de_rua`:
+
+- `true` quando existir `id` com `root="2.16.840.1.113883.13.600.1"` e `extension="2"`;
+- `false` quando o OID nao existir, vier com outro codigo, ou vier sem `extension` valido.
+
+Exemplo:
+
+```json
+{
+  "em_situacao_de_rua": true
+}
+```
+
 ## Modo de debug
 
 Para investigar falhas de autenticacao ou da consulta ao CADSUS, o pacote expoe `buscar_pessoa_debug`.

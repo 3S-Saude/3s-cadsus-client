@@ -68,6 +68,8 @@ CPF_DOCUMENT_ROOT = DOCUMENT_ROOTS[SoapDocumentType.CPF]
 CNS_DOCUMENT_ROOT = DOCUMENT_ROOTS[SoapDocumentType.CNS]
 CNS_CARD_TYPE_ROOT = "2.16.840.1.113883.13.236.1"
 DEFINITIVE_CNS_CARD_TYPE = "D"
+HOUSING_SITUATION_ROOT = "2.16.840.1.113883.13.600.1"
+HOMELESS_HOUSING_SITUATION_CODE = "2"
 
 
 def build_busca_pessoa_envelope(
@@ -117,6 +119,7 @@ def _extract_patient_data(patient: ET.Element) -> dict[str, Any]:
         "cpf": None,
         "falecido": False,
         "data_falecimento": None,
+        "em_situacao_de_rua": False,
     }
 
     if nome := _extract_given_name(_find_child(patient, "name")):
@@ -154,6 +157,11 @@ def _extract_patient_data(patient: ET.Element) -> dict[str, Any]:
     if cpf and len(cpf) == 11:
         cpf = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
     data["cpf"] = cpf
+
+    housing_situation_code = _extract_housing_situation_code(patient)
+    data["em_situacao_de_rua"] = (
+        housing_situation_code == HOMELESS_HOUSING_SITUATION_CODE
+    )
 
     if mother_name := _extract_mother_name(patient):
         data["nome_da_mae"] = mother_name
@@ -199,6 +207,23 @@ def _extract_documents(patient: ET.Element) -> tuple[list[str], str | None, str 
         cns_values[0] if cns_values else None,
     )
     return cns_values, primary_cns, cpf
+
+
+def _extract_housing_situation_code(patient: ET.Element) -> str | None:
+    first_valid_code: str | None = None
+
+    for other_id in _find_children(patient, "asOtherIDs"):
+        for identifier in _find_children(other_id, "id"):
+            if identifier.attrib.get("root") != HOUSING_SITUATION_ROOT:
+                continue
+
+            extension = _normalized_text(identifier.attrib.get("extension"))
+            if extension == HOMELESS_HOUSING_SITUATION_CODE:
+                return extension
+            if first_valid_code is None and extension:
+                first_valid_code = extension
+
+    return first_valid_code
 
 
 def _extract_id_extensions(element: ET.Element) -> dict[str, str]:
