@@ -83,7 +83,7 @@ def build_busca_pessoa_envelope(
     )
 
 
-def parse_busca_pessoa_response(xml: str) -> dict[str, Any] | None:
+def parse_busca_pessoa_response(xml: str, *, validar_resposta: bool = False) -> dict[str, Any] | None:
     """Converte o XML SOAP do CADSUS em um dicionario com os dados do paciente."""
 
     try:
@@ -92,6 +92,11 @@ def parse_busca_pessoa_response(xml: str) -> dict[str, Any] | None:
         raise CadSUSParseError(
             "Falha ao interpretar o XML SOAP retornado pelo CADSUS."
         ) from exc
+
+    if validar_resposta:
+        nomes = {_local_name(elemento.tag) for elemento in root.iter()}
+        if "Fault" in nomes or "PRPA_IN201306UV02" not in nomes:
+            raise CadSUSParseError("Resposta SOAP cadastral inválida.")
 
     patient = _find_path(
         root,
@@ -105,6 +110,8 @@ def parse_busca_pessoa_response(xml: str) -> dict[str, Any] | None:
         "patientPerson",
     )
     if patient is None:
+        if validar_resposta and any(_local_name(elemento.tag) == "patientPerson" for elemento in root.iter()):
+            raise CadSUSParseError("Estrutura SOAP cadastral inválida.")
         return None
 
     return _extract_patient_data(patient)

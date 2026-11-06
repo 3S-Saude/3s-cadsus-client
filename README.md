@@ -181,3 +181,5 @@ o cache é relido sob o lock. Sem essas opções os padrões anteriores continua
 válidos. O consumidor deve limitar também o tempo total do seu caso de uso.
 
 A versão 0.1.9 mantém a versão pública do módulo coerente com os metadados da distribuição.
+
+Para distinguir ausência confirmada de resposta inválida, use `buscar_pessoa(..., validar_resposta=True)`. O modo exige identidade e nome coerentes; falhas SOAP/FHIR não viram ausência. O padrão permanece compatível com consumidores existentes.
