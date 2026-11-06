@@ -179,3 +179,5 @@ um timeout HTTPX explícito, aplicado à consulta e a todas as etapas de
 autenticação. `token_lock` é uma fábrica de context manager assíncrono;
 o cache é relido sob o lock. Sem essas opções os padrões anteriores continuam
 válidos. O consumidor deve limitar também o tempo total do seu caso de uso.
+
+A versão 0.1.9 mantém a versão pública do módulo coerente com os metadados da distribuição.
