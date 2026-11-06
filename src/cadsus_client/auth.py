@@ -60,6 +60,8 @@ class CadSUSAuthenticator:
         settings: CadSUSSettings,
         cache: TokenCache,
         *,
+        http_timeout: httpx.Timeout | float | None = None,
+        token_lock=None,
         transport: httpx.AsyncBaseTransport | None = None,
         api_login_request_factory: ApiLoginRequestFactory = default_api_login_request,
         api_token_request_factory: ApiTokenRequestFactory = default_api_token_request,
@@ -72,6 +74,8 @@ class CadSUSAuthenticator:
         self._api_token_request_factory = api_token_request_factory
         self._cert_token_request_factory = cert_token_request_factory
         self._lock = asyncio.Lock()
+        self._token_lock = token_lock or (lambda: self._lock)
+        self._http_timeout = http_timeout if http_timeout is not None else settings.timeout
 
     async def get_token(self, *, debug: ConsoleDebugTracer | None = None) -> str:
         if debug is not None:
@@ -85,7 +89,7 @@ class CadSUSAuthenticator:
                 debug.log_cache_hit(self._settings.cache_key, cached)
             return cached.value
 
-        async with self._lock:
+        async with self._token_lock():
             cached = await self._cache.get(self._settings.cache_key)
             if cached is not None:
                 if debug is not None:
@@ -218,7 +222,7 @@ class CadSUSAuthenticator:
             )
 
         client_kwargs: dict[str, Any] = {
-            "timeout": self._settings.timeout,
+            "timeout": self._http_timeout,
             "transport": self._transport,
         }
         if cert and cert[0] and cert[1]:

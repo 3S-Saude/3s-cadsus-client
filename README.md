@@ -171,3 +171,11 @@ O fluxo foi montado para usar Trusted Publishing via OIDC. Antes da primeira rel
 
 - https://packaging.python.org/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
 - https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-pypi
+
+### Política de resiliência por consumidor (0.1.8)
+
+`CadSUSClient(..., http_timeout=..., token_lock=...)` e `from_env` aceitam
+um timeout HTTPX explícito, aplicado à consulta e a todas as etapas de
+autenticação. `token_lock` é uma fábrica de context manager assíncrono;
+o cache é relido sob o lock. Sem essas opções os padrões anteriores continuam
+válidos. O consumidor deve limitar também o tempo total do seu caso de uso.
