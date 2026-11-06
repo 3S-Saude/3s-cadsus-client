@@ -32,6 +32,8 @@ class CadSUSClient:
         self,
         settings: CadSUSSettings,
         *,
+        http_timeout: httpx.Timeout | float | None = None,
+        token_lock=None,
         cache: TokenCache | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         client: httpx.AsyncClient | None = None,
@@ -44,13 +46,14 @@ class CadSUSClient:
         self._transport = transport
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
-            timeout=settings.timeout,
+            timeout=http_timeout if http_timeout is not None else settings.timeout,
             transport=transport,
         )
         self._cache = cache or create_token_cache(settings)
         self._authenticator = CadSUSAuthenticator(
             settings,
             self._cache,
+            http_timeout=http_timeout, token_lock=token_lock,
             transport=transport,
             api_login_request_factory=api_login_request_factory
             or default_api_login_request,
@@ -64,6 +67,8 @@ class CadSUSClient:
     def from_env(
         cls,
         *,
+        http_timeout: httpx.Timeout | float | None = None,
+        token_lock=None,
         cache: TokenCache | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         client: httpx.AsyncClient | None = None,
@@ -74,6 +79,7 @@ class CadSUSClient:
         settings = CadSUSSettings.from_env()
         return cls(
             settings,
+            http_timeout=http_timeout, token_lock=token_lock,
             cache=cache,
             transport=transport,
             client=client,
