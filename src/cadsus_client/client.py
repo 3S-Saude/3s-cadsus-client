@@ -98,8 +98,8 @@ class CadSUSClient:
         if self._owns_client:
             await self._client.aclose()
 
-    async def buscar_pessoa(self, identifier: str) -> dict[str, Any] | None:
-        return await self._buscar_pessoa(identifier)
+    async def buscar_pessoa(self, identifier: str, *, validar_resposta: bool = False) -> dict[str, Any] | None:
+        return await self._buscar_pessoa(identifier, validar_resposta=validar_resposta)
 
     async def buscar_pessoa_debug(
         self,
@@ -130,6 +130,7 @@ class CadSUSClient:
         identifier: str,
         *,
         debug: ConsoleDebugTracer | None = None,
+        validar_resposta: bool = False,
     ) -> dict[str, Any] | None:
         normalized_identifier = normalize_identifier(identifier)
         if not normalized_identifier:
@@ -203,7 +204,14 @@ class CadSUSClient:
             raise CadSUSRequestError(f"Erro de comunicacao com o CADSUS: {exc}") from exc
 
         try:
-            result = parse_busca_pessoa_response(response.text)
+            result = parse_busca_pessoa_response(response.text, validar_resposta=validar_resposta)
+            if validar_resposta and result:
+                identificadores = [result.get("cpf"), result.get("cns"), *(result.get("lista_cns") or [])]
+                if not isinstance(result.get("nome"), str) or not result["nome"].strip() or normalized_identifier not in {
+                    normalize_identifier(valor) for valor in identificadores if valor
+                }:
+                    from .exceptions import CadSUSParseError
+                    raise CadSUSParseError("Resposta cadastral incompleta ou divergente.")
         except Exception as exc:
             if debug is not None:
                 debug.log_exception("Erro ao parsear resposta da API CADSUS", exc)
