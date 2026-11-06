@@ -27,3 +27,10 @@ class ResilienciaTests(unittest.IsolatedAsyncioTestCase):
             await client.buscar_pessoa('12345678901')
         self.assertEqual(len(fases), 3)
         self.assertTrue(all(f == timeout.as_dict() for f in fases))
+
+
+class VersaoDistribuicaoTest(unittest.TestCase):
+    def test_versao_publica_corresponde_a_distribuicao_instalada(self):
+        from importlib.metadata import version
+        import cadsus_client
+        self.assertEqual(cadsus_client.__version__, version("3s-cadsus-client"))
